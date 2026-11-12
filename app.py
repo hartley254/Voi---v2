@@ -135,24 +135,121 @@ def send_photo(buf, caption):
     except:
         return False
 
+# --- PASTE THIS ABOVE scan_all ---
+sent_alerts = set()
+
+def already_sent(key):
+    if key in sent_alerts:
+        return True
+    sent_alerts.add(key)
+    return False
+
+def send_text(msg):
+    if not BOT or not CHAT:
+        return False
+    try:
+        r = requests.post(f"https://api.telegram.org/bot{BOT}/sendMessage",
+            data={"chat_id": CHAT, "text": msg, "parse_mode": "HTML"})
+        return r.status_code == 200
+    except:
+        return False
+
+def find_failed_retracements(df, ob_low, ob_high):
+    levels = []
+    # Last 20 candles: any swing that reversed BEFORE touching OB = Liquidity / IDM
+    for i in range(max(2, len(df)-20), len(df)-1):
+        high = df['high'].iloc[i]
+        low = df['low'].iloc[i]
+        prev_h = df['high'].iloc[i-1]
+        next_h = df['high'].iloc[i+1]
+        prev_l = df['low'].iloc[i-1]
+        next_l = df['low'].iloc[i+1]
+        # Swing high that did NOT touch OB
+        if high > prev_h and high > next_h:
+            if high < ob_low or high > ob_high:
+                levels.append({'price': high, 'type': 'buyside'})
+        # Swing low that did NOT touch OB
+        if low < prev_l and low < next_l:
+            if low < ob_low or low > ob_high:
+                levels.append({'price': low, 'type': 'sellside'})
+    return levels
+
+def did_sweep(df, levels):
+    if not levels:
+        return False
+    last_h = df['high'].iloc[-1]
+    last_l = df['low'].iloc[-1]
+    for l in levels:
+        if l['type'] == 'buyside' and last_h > l['price']:
+            return True
+        if l['type'] == 'sellside' and last_l < l['price']:
+            return True
+    return False
+
+# --- REPLACE YOUR OLD scan_all WITH THIS ---
 def scan_all():
     results = []
     for symbol, ticker in SYMBOLS.items():
         df1 = get_data(ticker, "1h", "10d")
         df4 = get_data(ticker, "4h", "30d")
         s = find_setup(df1, df4)
-        if s is None or df1 is None: continue
+        if s is None or df1 is None:
+            continue
+
+        ob_low = s['ob_low']
+        ob_high = s['ob_high']
+        ob_key = f"{symbol}-{ob_low:.4f}-{ob_high:.4f}"
+
+        # --- STAGE 1: OB FORMED ---
+        if not already_sent(f"OB-{ob_key}"):
+            send_text(f"🟡 OB FORMED\n<b>{symbol}</b>\nZone: {ob_low:.4f} - {ob_high:.4f}\nDir: {s['direction']} | Bias: {s['bias']}")
+
+        # --- STAGE 2: LIQUIDITY = FAILED RETRACEMENT NOT TOUCHING OB ---
+        liqs = find_failed_retracements(df1, ob_low, ob_high)
+        for liq in liqs:
+            liq_key = f"LIQ-{ob_key}-{liq['price']:.4f}"
+            if not already_sent(liq_key):
+                send_text(f"🔵 LIQUIDITY FORMED\n<b>{symbol}</b>\nType: {liq['type']} - IDM / Failed Retracement\nPrice: {liq['price']:.4f}\nRule: Until price touches OB, all failed retracements = Liquidity")
+
+        # --- STAGE 3: SETUP ---
+        last_low = df1['low'].iloc[-1]
+        last_high = df1['high'].iloc[-1]
+        touched_ob = (last_low <= ob_high and last_high >= ob_low)
+        swept = did_sweep(df1, liqs)
+        # Model A: Assume OB cleared previous liquidity if BOS is in setup (your find_setup already checks BOS)
+        # If touched OB now = trade
+        # Model B: If not touched OB yet = wait, if swept + touched = trade
+
         buf = make_chart(df1, symbol, s)
-        zone_txt = "✅ IN OB ZONE - WAIT FOR CONFIRMATION" if s["in_zone"] else f"⏳ {s['dist']:.2f}% away from OB - Wait for price to reach OB"
-        cap = (f"<b>{symbol} - {s['direction']} SETUP</b>\n"
-               f"Bias: {s['bias']} | {s['trade_type']}\n"
+        zone_txt = "✅ IN OB ZONE - WAIT FOR..."
+        cap = (f"<b>{symbol} - {s['direction']}</b>\n"
+               f"Bias: {s['bias']} | {s['trend']}\n"
                f"Price: {s['price']:.4f}\n"
                f"OB Zone: {s['ob_low']:.4f} - {s['ob_high']:.4f}\n"
                f"{zone_txt}\n"
-               f"Entry: At OB | SL: Above OB (SELL) / Below OB (BUY)\n"
+               f"Entry: At OB | SL: Above OB\n"
                f"Time: {datetime.now().strftime('%H:%M')}")
-        ok = send_photo(buf, cap)
-        results.append(f"{symbol}: {'Sent ✅' if ok else 'Failed ❌'} - {s['direction']} OB {s['ob_low']:.2f}-{s['ob_high']:.2f}")
+
+        if touched_ob and not liqs:
+            # MODEL A: OB cleared liquidity, no standing liquidity left, retracement to OB = TRADE
+            if not already_sent(f"TRADE-A-{ob_key}"):
+                send_text(f"🟢 TRADE - MODEL A\n<b>{symbol}</b>\nOB Cleared Liquidity + FVG + BOS + Retracement to OB = ENTER")
+                ok = send_photo(buf, cap)
+                results.append(f"{symbol}: {'Sent' if ok else 'Failed'} - MODEL A")
+
+        elif liqs and not touched_ob and not swept:
+            # MODEL B WAIT: Liquidity still standing, retracement did NOT touch OB / FVG - WAIT
+            if not already_sent(f"WAIT-B-{ob_key}"):
+                send_text(f"🟡 WAIT - MODEL B\n<b>{symbol}</b>\nOB + FVG + BOS formed\nRetracement did NOT touch OB yet\nLiquidity (failed retracements) still standing\nWaiting for SWEEP + TAP OB")
+
+        elif liqs and swept and touched_ob:
+            # MODEL B TRADE: Swept liquidity + Tap OB
+            if not already_sent(f"TRADE-B-{ob_key}"):
+                send_text(f"🟢 TRADE - MODEL B\n<b>{symbol}</b>\nSweep of Liquidity (Failed Retracement) + Tap OB = ENTER")
+                ok = send_photo(buf, cap)
+                results.append(f"{symbol}: {'Sent' if ok else 'Failed'} - MODEL B")
+
+        # If no setup yet, don't spam, just keep waiting
     return results
 
 if st.button("🔍 Run Scan Now - Send All 3 OB Setups"):
