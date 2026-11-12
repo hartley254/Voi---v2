@@ -72,6 +72,13 @@ def make_chart(df1, symbol, bias, price):
     buf.seek(0)
     return buf.getvalue()
   # --- UI ---
+# --- MANUAL RUN BUTTON ---
+if st.button("🔍 Run Scan Now", type="primary", use_container_width=True):
+    st.cache_data.clear()
+    st.session_state.sent_setups = set()
+    st.session_state.sent_entries = set()
+    st.rerun()
+    
 auto = st.toggle("Auto-scan ON (sends to Telegram)", value=False)
 if st.button("Test Telegram - Send Test Photo"):
     # quick test using BTCUSD
