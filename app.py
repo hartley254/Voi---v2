@@ -19,96 +19,94 @@ def get_data(ticker, interval, period="10d"):
 
 def find_setup(df1, df4):
     if df1 is None or len(df1) < 50: return None
-    close = df1["Close"]; high = df1["High"]; low = df1["Low"]; open_ = df1["Open"]
+    close = df1["Close"]; high = df1["High"]; low = df1["Low"]
     price = float(close.iloc[-1])
 
-    # 4H bias from last 50 candles
     c4 = df4["Close"] if df4 is not None else close
     bias = "BEARISH" if float(c4.iloc[-1]) < float(c4.iloc[-50]) else "BULLISH"
 
-    # --- YOUR RULE: OB + FVG -> BOS ---
-    # Scan backwards for the LAST valid setup
-    # OB = last candle before the displacement, ANY colour
-    # FVG = gap left by the displacement
-    # BOS = close breaks swing high/low AFTER the FVG
-
-    best = None
+    # YOUR UPGRADED RULE: OB + FVG -> BOS -> FVG Retest (IDM) -> OB Touch
+    # If OB filled -> skip to next OB
+    # If FVG touched but OB not -> IDM / Liquidity = BEST setup
 
     for i in range(len(df1)-2, 25, -1):
-        # Swing high/low before this candle
         swing_high = float(high.iloc[i-20:i].max())
         swing_low = float(low.iloc[i-20:i].min())
         swing_high_idx = int(high.iloc[i-20:i].values.argmax()) + (i-20)
         swing_low_idx = int(low.iloc[i-20:i].values.argmin()) + (i-20)
-    
 
-        # --- BEARISH: OB + FVG -> BOS down ---
+        # --- BEARISH ---
         if close.iloc[i] < swing_low:
-            # OB = candle that made the swing high (any colour)
             ob_idx = swing_high_idx
             ob_high = float(high.iloc[ob_idx])
             ob_low = float(low.iloc[ob_idx])
-            
 
-            # FVG check: is there a gap between OB and BOS candle?
-            # Bearish FVG: low of candle BEFORE gap > high of candle AFTER gap
-            fvg_found = False
-            fvg_high = 0; fvg_low = 0
+            # FVG check
+            fvg_found = False; fvg_high = 0; fvg_low = 0
             for j in range(ob_idx+1, i-1):
-                # j is middle candle, gap between j-1 and j+1
                 if float(low.iloc[j-1]) > float(high.iloc[j+1]):
-                    fvg_found = True
-                    fvg_high = float(low.iloc[j-1])
-                    fvg_low = float(high.iloc[j+1])
-                    break
-            if not fvg_found:
-                continue # No FVG = No valid OB, skip - YOUR RULE
+                    fvg_found = True; fvg_high = float(low.iloc[j-1]); fvg_low = float(high.iloc[j+1]); break
+            if not fvg_found: continue
 
-            # Fresh check: price has not already closed inside OB
-            if any((low.iloc[k] <= ob_high and high.iloc[k] >= ob_low) for k in range(i+1, len(df1))):
-                # Already mitigated, but allow if price is still away? We skip if touched
-                # Check if price touched after BOS - if yes, not fresh
-                pass
+            # UPGRADE 1: If OB is FILLED -> skip, look for next OB
+            ob_touched = False
+            for k in range(i+1, len(df1)):
+                if float(high.iloc[k]) >= ob_low: # price entered OB
+                    ob_touched = True; break
+            if ob_touched: continue # OB used, find next OB
 
-            best = {"direction": "SELL", "ob_high": ob_high, "ob_low": ob_low,
-                    "fvg_high": fvg_high, "fvg_low": fvg_low,
-                    "trade_type": "OB + FVG -> BOS", "bos_up": False, "bos_down": True}
-            break
+            # UPGRADE 2: Check FVG Retest = IDM / Liquidity
+            # Did price come back up, touch FVG, but NOT touch OB?
+            fvg_touched = False
+            for k in range(i+1, len(df1)):
+                if float(high.iloc[k]) >= fvg_low and float(high.iloc[k]) < ob_low:
+                    fvg_touched = True; break
+                if float(high.iloc[k]) >= ob_low: break # hit OB first, not IDM
 
-        # --- BULLISH: OB + FVG -> BOS up ---
+            # State: FRESH OB + (IDM if FVG touched)
+            state = "IDM / Liquidity - FVG Tapped, Waiting OB" if fvg_touched else "Fresh OB - Waiting Retest"
+
+            ob_low_dist = abs(price - ob_low) / price * 100
+            return {"direction": "SELL", "ob_high": ob_high, "ob_low": ob_low,
+                    "in_zone": (ob_low <= price <= ob_high), "dist": ob_low_dist,
+                    "bos_up": False, "bos_down": True, "trade_type": "OB + FVG -> BOS + IDM",
+                    "fvg_high": fvg_high, "fvg_low": fvg_low, "price": price, "bias": bias, "state": state}
+
+        # --- BULLISH ---
         if close.iloc[i] > swing_high:
             ob_idx = swing_low_idx
-            ob_high = float(high.loc[ob_idx])
-            ob_low = float(low.loc[ob_idx])
+            ob_high = float(high.iloc[ob_idx])
+            ob_low = float(low.iloc[ob_idx])
 
-            fvg_found = False
-            fvg_high = 0; fvg_low = 0
+            fvg_found = False; fvg_high = 0; fvg_low = 0
             for j in range(ob_idx+1, i-1):
                 if float(high.iloc[j-1]) < float(low.iloc[j+1]):
-                    fvg_found = True
-                    fvg_high = float(low.iloc[j+1])
-                    fvg_low = float(high.iloc[j-1])
-                    break
-            if not fvg_found:
-                continue # No FVG = No valid OB
+                    fvg_found = True; fvg_high = float(low.iloc[j+1]); fvg_low = float(high.iloc[j-1]); break
+            if not fvg_found: continue
 
-            best = {"direction": "BUY", "ob_high": ob_high, "ob_low": ob_low,
-                    "fvg_high": fvg_high, "fvg_low": fvg_low,
-                    "trade_type": "OB + FVG -> BOS", "bos_up": True, "bos_down": False}
-            break
+            # UPGRADE 1: If OB FILLED -> skip to next
+            ob_touched = False
+            for k in range(i+1, len(df1)):
+                if float(low.iloc[k]) <= ob_high:
+                    ob_touched = True; break
+            if ob_touched: continue
 
-    if best is None: return None
+            # UPGRADE 2: FVG Retest = IDM
+            fvg_touched = False
+            for k in range(i+1, len(df1)):
+                if float(low.iloc[k]) <= fvg_high and float(low.iloc[k]) > ob_high:
+                    fvg_touched = True; break
+                if float(low.iloc[k]) <= ob_high: break
 
-    ob_high = best["ob_high"]; ob_low = best["ob_low"]
-    in_zone = (ob_low <= price <= ob_high)
-    dist = abs(price - ob_high) / price * 100 if best["direction"] == "SELL" else abs(price - ob_low) / price * 100
+            state = "IDM / Liquidity - FVG Tapped, Waiting OB" if fvg_touched else "Fresh OB - Waiting Retest"
 
-    return {"direction": best["direction"], "ob_high": ob_high, "ob_low": ob_low,
-            "in_zone": in_zone, "dist": dist,
-            "bos_up": best["bos_up"], "bos_down": best["bos_down"],
-            "trade_type": best["trade_type"],
-            "fvg_high": best["fvg_high"], "fvg_low": best["fvg_low"],
-            "price": price, "bias": bias}
+            ob_high_dist = abs(price - ob_high) / price * 100
+            return {"direction": "BUY", "ob_high": ob_high, "ob_low": ob_low,
+                    "in_zone": (ob_low <= price <= ob_high), "dist": ob_high_dist,
+                    "bos_up": True, "bos_down": False, "trade_type": "OB + FVG -> BOS + IDM",
+                    "fvg_high": fvg_high, "fvg_low": fvg_low, "price": price, "bias": bias, "state": state}
+
+    return None
 
 def make_chart(df1, symbol, s):
     fig, ax = plt.subplots(figsize=(10, 5))
