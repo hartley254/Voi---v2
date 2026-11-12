@@ -38,15 +38,17 @@ def find_setup(df1, df4):
         # Swing high/low before this candle
         swing_high = float(high.iloc[i-20:i].max())
         swing_low = float(low.iloc[i-20:i].min())
-        swing_high_idx = high.iloc[i-20:i].idxmax()
-        swing_low_idx = low.iloc[i-20:i].idxmin()
+        swing_high_idx = int(high.iloc[i-20:i].values.argmax()) + (i-20)
+        swing_low_idx = int(low.iloc[i-20:i].values.argmin()) + (i-20)
+    
 
         # --- BEARISH: OB + FVG -> BOS down ---
         if close.iloc[i] < swing_low:
             # OB = candle that made the swing high (any colour)
             ob_idx = swing_high_idx
-            ob_high = float(high.loc[ob_idx])
-            ob_low = float(low.loc[ob_idx])
+            ob_high = float(high.iloc[ob_idx])
+            ob_low = float(low.iloc[ob_idx])
+            
 
             # FVG check: is there a gap between OB and BOS candle?
             # Bearish FVG: low of candle BEFORE gap > high of candle AFTER gap
