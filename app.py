@@ -161,7 +161,6 @@ if st.button("🔍 Run Scan Now - Send All 3 OB Setups"):
         for r in res: st.write(r)
         if len(res) == 0:
              st.warning("0 fresh OBs found - All OBs were already touched.")
-             send_telegram("VOI Scanner: Scan done - 0 fresh OBs. All OBs already touched, waiting for new OB.")
         else:
              st.success(f"Done - Sent {len(res)} charts to Telegram!")
 
