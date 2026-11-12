@@ -64,7 +64,7 @@ def make_chart(df1, symbol, s):
 def scan_all():
     results = []
     for symbol, ticker in SYMBOLS.items():
-        df1 = get_data(ticker, "1h", "10d"); df4 = get_data(ticker, "4h", "30d")s = find_setup(df1, df4)
+        df1 = get_data(ticker, "1h", "10d")
         df4 = get_data(ticker, "4h", "30d")
         s = find_setup(df1, df4)
          if s is None or df1 is None: continue
