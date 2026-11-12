@@ -44,16 +44,23 @@ def find_setup(df1, df4):
             "bos_up": bos_up, "bos_down": bos_down, "last_high": last_high, "last_low": last_low}
 
 def make_chart(df1, symbol, s):
-    fig, ax = plt.subplots(figsize=(8, 4.5))
-    ax.plot(df1.index[-100:], df1["Close"].iloc[-100:], color="white", linewidth=1.5)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    data = df1.tail(100).reset_index(drop=True)
+    for i, row in data.iterrows():
+        o, h, l, c = float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"])
+        color = "#26a69a" if c >= o else "#ef5350"
+        ax.plot([i, i], [l, h], color=color, linewidth=1)
+        ax.add_patch(plt.Rectangle((i-0.4, min(o, c)), 0.8, abs(c-o) if abs(c-o) > 0 else 0.0001, facecolor=color, edgecolor=color))
     # Draw OB box
-    ax.axhspan(s["ob_low"], s["ob_high"], color="red" if s["direction"]=="SELL" else "green", alpha=0.35)
+    ax.axhspan(s["ob_low"], s["ob_high"], color="red", alpha=0.25)
     ax.axhline(s["price"], color="yellow", linestyle="--", linewidth=1)
+    ax.set_title(f"{symbol} - Price {s['price']:.2f}", color="white", fontsize=11, fontweight="bold")
     ax.set_facecolor("#0e1117"); fig.patch.set_facecolor("#0e1117")
-    ax.tick_params(colors="white"); ax.set_title(f"{symbol} 1H - {s['direction']} OB SETUP", color="white", fontsize=12, weight="bold")
-    ax.grid(True, alpha=0.2)
-    buf = io.BytesIO(); fig.savefig(buf, format="png", bbox_inches="tight"); plt.close(fig); buf.seek(0)
+    ax.tick_params(colors="white"); ax.grid(True, alpha=0.2)
+    buf = io.BytesIO(); fig.savefig(buf, format="png", facecolor=fig.get_facecolor()); plt.close(fig)
+    buf.seek(0)
     return buf
+    
 def send_photo(buf, caption):
     if not BOT or not CHAT:
         return False
