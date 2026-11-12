@@ -68,9 +68,9 @@ def scan_all():
         df4 = get_data(ticker, "4h", "30d")
         s = find_setup(df1, df4)
         if s is None or df1 is None: continue
-            buf = make_chart(df1, symbol, s)
-            zone_txt = "✅ IN OB ZONE - WAIT FOR CONFIRMATION" if s["in_zone"] else f"⏳ {s['dist']:.2f}% away from OB - Wait for price to reach OB"
-            cap = (f"<b>{symbol} - {s['direction']} SETUP</b>\n"
+        buf = make_chart(df1, symbol, s)
+        zone_txt = "✅ IN OB ZONE - WAIT FOR CONFIRMATION" if s["in_zone"] else f"⏳ {s['dist']:.2f}% away from OB - Wait for price to reach OB"
+        cap = (f"<b>{symbol} - {s['direction']} SETUP</b>\n"
                f"Bias: {s['bias']} | {s['trade_type']}\n"
                f"Price: {s['price']:.4f}\n"
                f"OB Zone: {s['ob_low']:.4f} - {s['ob_high']:.4f}\n"
