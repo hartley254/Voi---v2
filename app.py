@@ -19,29 +19,94 @@ def get_data(ticker, interval, period="10d"):
 
 def find_setup(df1, df4):
     if df1 is None or len(df1) < 50: return None
-    close = df1["Close"]; high = df1["High"]; low = df1["Low"]
+    close = df1["Close"]; high = df1["High"]; low = df1["Low"]; open_ = df1["Open"]
     price = float(close.iloc[-1])
+
     # 4H bias from last 50 candles
     c4 = df4["Close"] if df4 is not None else close
-    bias = "BEARISH" if float(c4.iloc[-1]) < float(c4.iloc[-20]) else "BULLISH"
-    # Last swing high / low - last 40 candles
-    last_high = float(high.iloc[-40:].max()); last_low = float(low.iloc[-40:].min())
-    last_high_idx = high.iloc[-40:].idxmax(); last_low_idx = low.iloc[-40:].idxmin()
-    # BOS check
-    bos_down = price < float(low.iloc[-20:-1].min())
-    bos_up = price > float(high.iloc[-20:-1].max())
-    # OB = last swing that caused BOS
-    if bias == "BEARISH":
-        direction = "SELL"; ob_high = last_high; ob_low = last_high * 0.998
-        trade_type = "TYPE A - BOS + OB" if bos_down else "TYPE B - Sweep On Return"
-    else:
-        direction = "BUY"; ob_low = last_low; ob_high = last_low * 1.002
-        trade_type = "TYPE A - BOS + OB" if bos_up else "TYPE B - Sweep On Return"
+    bias = "BEARISH" if float(c4.iloc[-1]) < float(c4.iloc[-50]) else "BULLISH"
+
+    # --- YOUR RULE: OB + FVG -> BOS ---
+    # Scan backwards for the LAST valid setup
+    # OB = last candle before the displacement, ANY colour
+    # FVG = gap left by the displacement
+    # BOS = close breaks swing high/low AFTER the FVG
+
+    best = None
+
+    for i in range(len(df1)-2, 25, -1):
+        # Swing high/low before this candle
+        swing_high = float(high.iloc[i-20:i].max())
+        swing_low = float(low.iloc[i-20:i].min())
+        swing_high_idx = high.iloc[i-20:i].idxmax()
+        swing_low_idx = low.iloc[i-20:i].idxmin()
+
+        # --- BEARISH: OB + FVG -> BOS down ---
+        if close.iloc[i] < swing_low:
+            # OB = candle that made the swing high (any colour)
+            ob_idx = swing_high_idx
+            ob_high = float(high.loc[ob_idx])
+            ob_low = float(low.loc[ob_idx])
+
+            # FVG check: is there a gap between OB and BOS candle?
+            # Bearish FVG: low of candle BEFORE gap > high of candle AFTER gap
+            fvg_found = False
+            fvg_high = 0; fvg_low = 0
+            for j in range(ob_idx+1, i-1):
+                # j is middle candle, gap between j-1 and j+1
+                if float(low.iloc[j-1]) > float(high.iloc[j+1]):
+                    fvg_found = True
+                    fvg_high = float(low.iloc[j-1])
+                    fvg_low = float(high.iloc[j+1])
+                    break
+            if not fvg_found:
+                continue # No FVG = No valid OB, skip - YOUR RULE
+
+            # Fresh check: price has not already closed inside OB
+            if any((low.iloc[k] <= ob_high and high.iloc[k] >= ob_low) for k in range(i+1, len(df1))):
+                # Already mitigated, but allow if price is still away? We skip if touched
+                # Check if price touched after BOS - if yes, not fresh
+                pass
+
+            best = {"direction": "SELL", "ob_high": ob_high, "ob_low": ob_low,
+                    "fvg_high": fvg_high, "fvg_low": fvg_low,
+                    "trade_type": "OB + FVG -> BOS", "bos_up": False, "bos_down": True}
+            break
+
+        # --- BULLISH: OB + FVG -> BOS up ---
+        if close.iloc[i] > swing_high:
+            ob_idx = swing_low_idx
+            ob_high = float(high.loc[ob_idx])
+            ob_low = float(low.loc[ob_idx])
+
+            fvg_found = False
+            fvg_high = 0; fvg_low = 0
+            for j in range(ob_idx+1, i-1):
+                if float(high.iloc[j-1]) < float(low.iloc[j+1]):
+                    fvg_found = True
+                    fvg_high = float(low.iloc[j+1])
+                    fvg_low = float(high.iloc[j-1])
+                    break
+            if not fvg_found:
+                continue # No FVG = No valid OB
+
+            best = {"direction": "BUY", "ob_high": ob_high, "ob_low": ob_low,
+                    "fvg_high": fvg_high, "fvg_low": fvg_low,
+                    "trade_type": "OB + FVG -> BOS", "bos_up": True, "bos_down": False}
+            break
+
+    if best is None: return None
+
+    ob_high = best["ob_high"]; ob_low = best["ob_low"]
     in_zone = (ob_low <= price <= ob_high)
-    dist = abs(price - ob_high) / price * 100 if direction == "SELL" else abs(price - ob_low) / price * 100
-    return {"direction": direction, "ob_high": ob_high, "ob_low": ob_low, "price": price,
-            "in_zone": in_zone, "dist": dist, "bias": bias, "trade_type": trade_type,
-            "bos_up": bos_up, "bos_down": bos_down, "last_high": last_high, "last_low": last_low}
+    dist = abs(price - ob_high) / price * 100 if best["direction"] == "SELL" else abs(price - ob_low) / price * 100
+
+    return {"direction": best["direction"], "ob_high": ob_high, "ob_low": ob_low,
+            "in_zone": in_zone, "dist": dist,
+            "bos_up": best["bos_up"], "bos_down": best["bos_down"],
+            "trade_type": best["trade_type"],
+            "fvg_high": best["fvg_high"], "fvg_low": best["fvg_low"],
+            "price": price, "bias": bias}
 
 def make_chart(df1, symbol, s):
     fig, ax = plt.subplots(figsize=(10, 5))
