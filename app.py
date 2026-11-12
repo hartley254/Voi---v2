@@ -260,7 +260,11 @@ if st.button("🔍 Run Scan Now - Send All 3 OB Setups"):
              st.warning("0 fresh OBs found - All OBs were already touched.")
         else:
              st.success(f"Done - Sent {len(res)} charts to Telegram!")
-
+if st.button("🧪 TEST ALERTS"):
+    send_text("🟡 OB FORMED\n<b>TEST - EURUSD</b>\nZone: 1.0850 - 1.0860\nDir: Bullish")
+    send_text("🔵 LIQUIDITY FORMED\n<b>TEST - EURUSD</b>\nType: buyside - IDM / Failed Retracement\nPrice: 1.0900")
+    send_text("🟡 WAIT - MODEL B\n<b>TEST - EURUSD</b>\nWaiting for SWEEP + TAP OB")
+    st.success("Test sent - Check Telegram!")
 st.write("---")
 st.write("This version uses **OB (Order Block)**, not EMA. Every scan sends all 3 charts with a possible setup.")
 st.write("Auto-scan runs every 5 mins when app is open.")
