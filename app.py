@@ -50,7 +50,7 @@ def find_setup(df1, df4):
 
             # UPGRADE 1: If OB is FILLED -> skip, look for next OB
             ob_touched = False
-            for k in range(i+1, len(df1)):
+            for k in range(ob_idx+1, len(df1)):
                 if float(high.iloc[k]) >= ob_low: # price entered OB
                     ob_touched = True; break
             if ob_touched: continue # OB used, find next OB
@@ -58,7 +58,7 @@ def find_setup(df1, df4):
             # UPGRADE 2: Check FVG Retest = IDM / Liquidity
             # Did price come back up, touch FVG, but NOT touch OB?
             fvg_touched = False
-            for k in range(i+1, len(df1)):
+            for k in range(ob_idx+1, len(df1)):
                 if float(high.iloc[k]) >= fvg_low and float(high.iloc[k]) < ob_low:
                     fvg_touched = True; break
                 if float(high.iloc[k]) >= ob_low: break # hit OB first, not IDM
@@ -86,14 +86,14 @@ def find_setup(df1, df4):
 
             # UPGRADE 1: If OB FILLED -> skip to next
             ob_touched = False
-            for k in range(i+1, len(df1)):
+            for k in range(ob_idx+1, len(df1)):
                 if float(low.iloc[k]) <= ob_high:
                     ob_touched = True; break
             if ob_touched: continue
 
             # UPGRADE 2: FVG Retest = IDM
             fvg_touched = False
-            for k in range(i+1, len(df1)):
+            for k in range(ob_idx+1, len(df1)):
                 if float(low.iloc[k]) <= fvg_high and float(low.iloc[k]) > ob_high:
                     fvg_touched = True; break
                 if float(low.iloc[k]) <= ob_high: break
