@@ -55,21 +55,21 @@ def make_chart(df1, symbol, s):
     buf = io.BytesIO(); fig.savefig(buf, format="png", bbox_inches="tight"); plt.close(fig); buf.seek(0)
     return buf
     def send_photo(buf, caption):
-    if not BOT or not CHAT: return False
-    try:
-        r = requests.post(f"https://api.telegram.org/bot{BOT}/sendPhoto", data={"chat_id": CHAT, "caption": caption, "parse_mode": "HTML"}, files={"photo": ("chart.png", buf, "image/png")}, timeout=30)
-        return r.status_code == 200
-    except: return False
+        if not BOT or not CHAT: return False
+        try:
+            r = requests.post(f"https://api.telegram.org/bot{BOT}/sendPhoto", data={"chat_id": CHAT, "caption": caption, "parse_mode": "HTML"}, files={"photo": ("chart.png", buf, "image/png")}, timeout=30)
+            return r.status_code == 200
+        except: return False
 
 def scan_all():
     results = []
     for symbol, ticker in SYMBOLS.items():
         df1 = get_data(ticker, "1h", "10d"); df4 = get_data(ticker, "4h", "30d")
-        s = find_setup(df1, df4)
-        if s is None or df1 is None: continue
-        buf = make_chart(df1, symbol, s)
-        zone_txt = "✅ IN OB ZONE - WAIT FOR CONFIRMATION" if s["in_zone"] else f"⏳ {s['dist']:.2f}% away from OB - Wait for price to reach OB"
-        cap = (f"<b>{symbol} - {s['direction']} SETUP</b>\n"
+            s = find_setup(df1, df4)
+            if s is None or df1 is None: continue
+            buf = make_chart(df1, symbol, s)
+            zone_txt = "✅ IN OB ZONE - WAIT FOR CONFIRMATION" if s["in_zone"] else f"⏳ {s['dist']:.2f}% away from OB - Wait for price to reach OB"
+            cap = (f"<b>{symbol} - {s['direction']} SETUP</b>\n"
                f"Bias: {s['bias']} | {s['trade_type']}\n"
                f"Price: {s['price']:.4f}\n"
                f"OB Zone: {s['ob_low']:.4f} - {s['ob_high']:.4f}\n"
