@@ -54,7 +54,7 @@ def make_chart(df1, symbol, s):
     ax.grid(True, alpha=0.2)
     buf = io.BytesIO(); fig.savefig(buf, format="png", bbox_inches="tight"); plt.close(fig); buf.seek(0)
     return buf
-    def send_photo(buf, caption):
+def send_photo(buf, caption):
         if not BOT or not CHAT: return False
         try:
             r = requests.post(f"https://api.telegram.org/bot{BOT}/sendPhoto", data={"chat_id": CHAT, "caption": caption, "parse_mode": "HTML"}, files={"photo": ("chart.png", buf, "image/png")}, timeout=30)
