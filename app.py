@@ -142,8 +142,8 @@ def make_chart(df1, symbol, s, tf_label="", liqs=None, entry_price=None):
 
         # --- ZOOM TO OB + PRICE ---
     recent = data.tail(50)
-    lo_vals = [float(recent["Low"].min()), float(s["ob_low"])]
-    hi_vals = [float(recent["High"].max()), float(s["ob_high"])]
+    lo_vals = [float(recent["Low"].min())]
+    hi_vals = [float(recent["High"].max())]
     if liqs:
         for liq in liqs:
             lo_vals.append(float(liq["price"]))
