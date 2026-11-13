@@ -122,9 +122,13 @@ def make_chart(df1, symbol, s, tf_label="", liqs=None, entry_price=None):
     # 1. OB = GREY BOX
     ax.axhspan(s["ob_low"], s["ob_high"], color="grey", alpha=0.35)
     # 2. LIQUIDITY / IDM = YELLOW LINE
+        # --- ONLY 2 NEAREST LIQUIDITY ---
+    if liqs:
+        last_price = float(data["Close"].iloc[-1])
+        liqs = sorted(liqs, key=lambda x: abs(float(x["price"]) - last_price))[:2]
     if liqs:
         for liq in liqs:
-            ax.axhline(float(liq["price"]), color="yellow", linestyle="--", linewidth=1.5)
+            ax.axhline(float(liq["price"]), color="yellow", linestyle="--", linewidth=1)
     # 3. ENTRY SETUP = LONG / SHORT
     if entry_price:
         is_long = s.get("direction", "") == "BUY"
