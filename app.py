@@ -1,4 +1,4 @@
-import streamlit as st, yfinance as yf, pandas as pd, matplotlib.pyplot as plt, io, requests, time
+import streamlit as st, yfinance as yf, pandas as pd, matplotlib.pyplot as plt, io, requests, time, json, os
 from datetime import datetime
 
 st.set_page_config(page_title="VOI V2 - OB Scanner", layout="centered", initial_sidebar_state="collapsed")
@@ -134,10 +134,23 @@ def send_photo(buf, caption):
         return r.status_code == 200
     except: return False
 
-sent_alerts = set()
+SENT_FILE = "sent_alerts.json"
+def load_sent():
+    try:
+        if os.path.exists(SENT_FILE):
+            with open(SENT_FILE, "r") as f:
+                return set(json.load(f))
+    except: pass
+    return set()
 def already_sent(key):
-    if key in sent_alerts: return True
-    sent_alerts.add(key); return False
+    sent = load_sent()
+    if key in sent: return True
+    sent.add(key)
+    try:
+        with open(SENT_FILE, "w") as f:
+            json.dump(list(sent)[-500:], f)
+    except: pass
+    return False
 
 def send_text(msg):
     if not BOT or not CHAT: return False
