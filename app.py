@@ -214,20 +214,22 @@ def scan_all():
                     send_text(f"🔵 LIQUIDITY FORMED [{tf_label}]\n<b>{label}</b>\nType: {liq['type']} - IDM / Failed Retracement\nPrice: {liq['price']:.4f}\nTotal levels: {len(liqs)}\nRule: Until price touches OB, all failed retracements = Liquidity")
             last_low = float(df1['Low'].iloc[-1]); last_high = float(df1['High'].iloc[-1])
             touched_ob = (last_low <= ob_high and last_high >= ob_low); swept = did_sweep(df1, liqs)
-            buf = make_chart(df1, label, s, tf_label)
+            buf = make_chart(df1, label, s, tf_label, liqs=liqs)
             zone_txt = "✅ IN OB ZONE - WAIT FOR..."
             cap = (f"<b>{label} - {s['direction']}</b>\nBias: {s['bias']} | {s['trade_type']}\nPrice: {s['price']:.4f}\nOB Zone: {s['ob_low']:.4f} - {s['ob_high']:.4f}\n{zone_txt}\nEntry: At OB | SL: Above OB\nTime: {datetime.now().strftime('%H:%M')}")
             if touched_ob and not liqs:
                 if not already_sent(f"TRADE-A-{ob_key}"):
                     send_text(f"🟢 TRADE - MODEL A [{tf_label}]\n<b>{label}</b>\nOB Cleared Liquidity + FVG + {s.get('struct','BOS')} + Retracement to OB = ENTER")
-                    ok = send_photo(buf, cap); results.append(f"{label}: {'Sent' if ok else 'Failed'} - MODEL A")
+                    buf_trade = make_chart(df1, label, s, tf_label, liqs=liqs, entry_price=float(df1['Close'].iloc[-1]))
+                    ok = send_photo(buf_trade, cap)
             elif liqs and not touched_ob and not swept:
                 if not already_sent(f"WAIT-B-{ob_key}"):
                     send_text(f"🟡 WAIT - MODEL B [{tf_label}]\n<b>{label}</b>\nOB + FVG + {s.get('struct','BOS')} formed\nRetracement did NOT touch OB yet\nLiquidity (failed retracements) still standing\nWaiting for SWEEP + TAP OB")
             elif liqs and swept and touched_ob:
                 if not already_sent(f"TRADE-B-{ob_key}"):
                     send_text(f"🟢 TRADE - MODEL B [{tf_label}]\n<b>{label}</b>\nSweep of Liquidity (Failed Retracement) + Tap OB = ENTER")
-                    ok = send_photo(buf, cap); results.append(f"{label}: {'Sent' if ok else 'Failed'} - MODEL B")
+                    buf_trade = make_chart(df1, label, s, tf_label, liqs=liqs, entry_price=float(df1['Close'].iloc[-1]))
+                    ok = send_photo(buf_trade, cap)
     return results
 
 # ---------- APP UI ----------
