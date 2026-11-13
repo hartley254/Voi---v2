@@ -111,7 +111,7 @@ def find_setup(df1, df4):
             return {"direction": "BUY", "ob_high": ob_high, "ob_low": ob_low, "in_zone": (ob_low <= price <= ob_high), "dist": ob_high_dist, "bos_up": True, "bos_down": False, "trade_type": f"OB + FVG -> {struct} + IDM", "struct": struct, "fvg_high": fvg_high, "fvg_low": fvg_low, "price": price, "bias": bias, "state": state}
     return None
 
-def make_chart(df1, symbol, s, tf_label=""):
+def make_chart(df1, symbol, s, tf_label="", liqs=None, entry_price=None):
     fig, ax = plt.subplots(figsize=(10, 5))
     data = df1.tail(100).reset_index(drop=True)
     for i, row in data.iterrows():
@@ -119,8 +119,23 @@ def make_chart(df1, symbol, s, tf_label=""):
         color = "#26a69a" if c >= o else "#ef5350"
         ax.plot([i, i], [l, h], color=color, linewidth=1)
         ax.add_patch(plt.Rectangle((i-0.4, min(o, c)), 0.8, abs(c-o) if abs(c-o) > 0 else 0.0001, facecolor=color, edgecolor=color))
-    ax.axhspan(s["ob_low"], s["ob_high"], color="red", alpha=0.25)
-    ax.axhline(s["price"], color="yellow", linestyle="--", linewidth=1)
+    # 1. OB = GREY BOX
+    ax.axhspan(s["ob_low"], s["ob_high"], color="grey", alpha=0.35)
+    # 2. LIQUIDITY / IDM = YELLOW LINE
+    if liqs:
+        for liq in liqs:
+            ax.axhline(float(liq["price"]), color="yellow", linestyle="--", linewidth=1.5)
+    # 3. ENTRY SETUP = LONG / SHORT
+    if entry_price:
+        is_long = s.get("direction", "") == "BUY"
+        label = "LONG" if is_long else "SHORT"
+        col = "#26a69a" if is_long else "#ef5350"
+        ax.axhline(float(entry_price), color=col, linestyle="-", linewidth=2)
+        ax.annotate(label, xy=(len(data)-1, float(entry_price)), xytext=(len(data)-15, float(entry_price)),
+                    color="white", fontsize=12, fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.4", facecolor=col, edgecolor="white"),
+                    arrowprops=dict(arrowstyle="->", color=col, lw=2))
+    ax.axhline(s["price"], color="white", linestyle=":", linewidth=0.8)
     ax.set_title(f"{symbol} {tf_label} - Price {s['price']:.2f} - {s.get('struct','')}", color="white", fontsize=11, fontweight="bold")
     ax.set_facecolor("#0e1117"); fig.patch.set_facecolor("#0e1117")
     ax.tick_params(colors="white"); ax.grid(True, alpha=0.2)
