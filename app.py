@@ -1,4 +1,4 @@
-qqimport streamlit as st, yfinance as yf, pandas as pd, matplotlib.pyplot as plt, io, requests, time, json, os
+import streamlit as st, yfinance as yf, pandas as pd, matplotlib.pyplot as plt, io, requests, time, json, os
 from datetime import datetime
 
 st.set_page_config(page_title="VOI V2 - OB Scanner", layout="centered", initial_sidebar_state="collapsed")
