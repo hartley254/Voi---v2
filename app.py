@@ -192,10 +192,11 @@ def scan_all():
             if not already_sent(f"OB-{ob_key}"):
                 send_text(f"🟡 OB FORMED [{tf_label}]\n<b>{label}</b>\nZone: {ob_low:.4f} - {ob_high:.4f}\nDir: {s['direction']} | Bias: {s['bias']} | Structure: {s.get('struct','BOS')}")
             liqs = find_failed_retracements(df1, ob_low, ob_high)
-            for liq in liqs:
-                liq_key = f"LIQ-{ob_key}-{liq['price']:.4f}"
-                if not already_sent(liq_key):
-                    send_text(f"🔵 LIQUIDITY FORMED [{tf_label}]\n<b>{label}</b>\nType: {liq['type']} - IDM / Failed Retracement\nPrice: {liq['price']:.4f}\nRule: Until price touches OB, all failed retracements = Liquidity")
+            if liqs:
+    liq = liqs[-1]
+    liq_key = f"LIQ-{ob_key}"
+    if not already_sent(liq_key):
+        send_text(f"🔵 LIQUIDITY FORMED [{tf_label}]\n<b>{label}</b>\nType: {liq['type']} - IDM / Failed Retracement\nPrice: {liq['price']:.4f}\nTotal levels: {len(liqs)}\nRule: Until price touches OB, all failed retracements = Liquidity")
             last_low = float(df1['Low'].iloc[-1]); last_high = float(df1['High'].iloc[-1])
             touched_ob = (last_low <= ob_high and last_high >= ob_low); swept = did_sweep(df1, liqs)
             buf = make_chart(df1, label, s, tf_label)
