@@ -139,6 +139,20 @@ def make_chart(df1, symbol, s, tf_label="", liqs=None, entry_price=None):
     ax.set_title(f"{symbol} {tf_label} - Price {s['price']:.2f} - {s.get('struct','')}", color="white", fontsize=11, fontweight="bold")
     ax.set_facecolor("#0e1117"); fig.patch.set_facecolor("#0e1117")
     ax.tick_params(colors="white"); ax.grid(True, alpha=0.2)
+
+        # --- ZOOM TO OB + PRICE ---
+    recent = data.tail(50)
+    lo_vals = [float(recent["Low"].min()), float(s["ob_low"])]
+    hi_vals = [float(recent["High"].max()), float(s["ob_high"])]
+    if liqs:
+        for liq in liqs:
+            lo_vals.append(float(liq["price"]))
+            hi_vals.append(float(liq["price"]))
+    lo = min(lo_vals)
+    hi = max(hi_vals)
+    pad = (hi - lo) * 0.15 if hi > lo else 0.001
+    ax.set_ylim(lo - pad, hi + pad)
+    ax.set_xlim(-2, len(data) + 5)
     buf = io.BytesIO(); fig.savefig(buf, format="png", facecolor=fig.get_facecolor()); plt.close(fig)
     buf.seek(0); return buf
 
