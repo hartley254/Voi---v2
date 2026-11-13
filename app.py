@@ -32,6 +32,7 @@ div.stButton:nth-of-type(2) > button { background:#2B3139; color:#fff; }
 BOT = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 CHAT = st.secrets.get("TELEGRAM_CHAT_ID", "")
 SYMBOLS = {"BTCUSD": "BTC-USD", "EURUSD": "EURUSD=X", "XAUUSD": "GC=F"}
+TIMEFRAMES = [("H1", "1h", "10d"), ("M15", "15m", "5d")]
 
 def get_data(ticker, interval, period="10d"):
     try:
@@ -40,6 +41,22 @@ def get_data(ticker, interval, period="10d"):
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         return df
     except: return None
+
+def detect_choch_bos(df1, break_idx, direction):
+    # Look back 40 candles before break: was trend opposite?
+    # If price was making lower lows then breaks up = CHoCH (reversal)
+    # If price was making higher highs then breaks up = BOS (continuation)
+    try:
+        look = df1.iloc[max(0,break_idx-40):break_idx]
+        if len(look) < 10: return "BOS"
+        first = float(look["Close"].iloc[0]); last = float(look["Close"].iloc[-1])
+        if direction == "BUY":
+            # Break up. If prior trend was down (last < first) = CHoCH, else BOS
+            return "CHoCH" if last < first else "BOS"
+        else:
+            # Break down. If prior trend was up (last > first) = CHoCH, else BOS
+            return "CHoCH" if last > first else "BOS"
+    except: return "BOS"
 
 def find_setup(df1, df4):
     if df1 is None or len(df1) < 50: return None
@@ -69,8 +86,9 @@ def find_setup(df1, df4):
                 if float(high.iloc[k]) >= fvg_low and float(high.iloc[k]) < ob_low: fvg_touched = True; break
                 if float(high.iloc[k]) >= ob_low: break
             state = "IDM / Liquidity - FVG Tapped, Waiting OB" if fvg_touched else "Fresh OB - Waiting Retest"
+            struct = detect_choch_bos(df1, i, "SELL")
             ob_low_dist = abs(price - ob_low) / price * 100
-            return {"direction": "SELL", "ob_high": ob_high, "ob_low": ob_low, "in_zone": (ob_low <= price <= ob_high), "dist": ob_low_dist, "bos_up": False, "bos_down": True, "trade_type": "OB + FVG -> BOS + IDM", "fvg_high": fvg_high, "fvg_low": fvg_low, "price": price, "bias": bias, "state": state}
+            return {"direction": "SELL", "ob_high": ob_high, "ob_low": ob_low, "in_zone": (ob_low <= price <= ob_high), "dist": ob_low_dist, "bos_up": False, "bos_down": True, "trade_type": f"OB + FVG -> {struct} + IDM", "struct": struct, "fvg_high": fvg_high, "fvg_low": fvg_low, "price": price, "bias": bias, "state": state}
         if close.iloc[i] > swing_high:
             ob_idx = swing_low_idx
             ob_high = float(high.iloc[ob_idx]); ob_low = float(low.iloc[ob_idx])
@@ -88,11 +106,12 @@ def find_setup(df1, df4):
                 if float(low.iloc[k]) <= fvg_high and float(low.iloc[k]) > ob_high: fvg_touched = True; break
                 if float(low.iloc[k]) <= ob_high: break
             state = "IDM / Liquidity - FVG Tapped, Waiting OB" if fvg_touched else "Fresh OB - Waiting Retest"
+            struct = detect_choch_bos(df1, i, "BUY")
             ob_high_dist = abs(price - ob_high) / price * 100
-            return {"direction": "BUY", "ob_high": ob_high, "ob_low": ob_low, "in_zone": (ob_low <= price <= ob_high), "dist": ob_high_dist, "bos_up": True, "bos_down": False, "trade_type": "OB + FVG -> BOS + IDM", "fvg_high": fvg_high, "fvg_low": fvg_low, "price": price, "bias": bias, "state": state}
+            return {"direction": "BUY", "ob_high": ob_high, "ob_low": ob_low, "in_zone": (ob_low <= price <= ob_high), "dist": ob_high_dist, "bos_up": True, "bos_down": False, "trade_type": f"OB + FVG -> {struct} + IDM", "struct": struct, "fvg_high": fvg_high, "fvg_low": fvg_low, "price": price, "bias": bias, "state": state}
     return None
 
-def make_chart(df1, symbol, s):
+def make_chart(df1, symbol, s, tf_label=""):
     fig, ax = plt.subplots(figsize=(10, 5))
     data = df1.tail(100).reset_index(drop=True)
     for i, row in data.iterrows():
@@ -102,7 +121,7 @@ def make_chart(df1, symbol, s):
         ax.add_patch(plt.Rectangle((i-0.4, min(o, c)), 0.8, abs(c-o) if abs(c-o) > 0 else 0.0001, facecolor=color, edgecolor=color))
     ax.axhspan(s["ob_low"], s["ob_high"], color="red", alpha=0.25)
     ax.axhline(s["price"], color="yellow", linestyle="--", linewidth=1)
-    ax.set_title(f"{symbol} - Price {s['price']:.2f}", color="white", fontsize=11, fontweight="bold")
+    ax.set_title(f"{symbol} {tf_label} - Price {s['price']:.2f} - {s.get('struct','')}", color="white", fontsize=11, fontweight="bold")
     ax.set_facecolor("#0e1117"); fig.patch.set_facecolor("#0e1117")
     ax.tick_params(colors="white"); ax.grid(True, alpha=0.2)
     buf = io.BytesIO(); fig.savefig(buf, format="png", facecolor=fig.get_facecolor()); plt.close(fig)
@@ -150,63 +169,68 @@ def did_sweep(df, levels):
 def scan_all():
     results = []
     for symbol, ticker in SYMBOLS.items():
-        df1 = get_data(ticker, "1h", "10d"); df4 = get_data(ticker, "4h", "30d")
-        s = find_setup(df1, df4)
-        if s is None or df1 is None: continue
-        ob_low = s['ob_low']; ob_high = s['ob_high']; ob_key = f"{symbol}-{ob_low:.4f}-{ob_high:.4f}"
-        if not already_sent(f"OB-{ob_key}"):
-            send_text(f"🟡 OB FORMED\n<b>{symbol}</b>\nZone: {ob_low:.4f} - {ob_high:.4f}\nDir: {s['direction']} | Bias: {s['bias']}")
-        liqs = find_failed_retracements(df1, ob_low, ob_high)
-        for liq in liqs:
-            liq_key = f"LIQ-{ob_key}-{liq['price']:.4f}"
-            if not already_sent(liq_key):
-                send_text(f"🔵 LIQUIDITY FORMED\n<b>{symbol}</b>\nType: {liq['type']} - IDM / Failed Retracement\nPrice: {liq['price']:.4f}\nRule: Until price touches OB, all failed retracements = Liquidity")
-        last_low = float(df1['Low'].iloc[-1]); last_high = float(df1['High'].iloc[-1])
-        touched_ob = (last_low <= ob_high and last_high >= ob_low); swept = did_sweep(df1, liqs)
-        buf = make_chart(df1, symbol, s)
-        zone_txt = "✅ IN OB ZONE - WAIT FOR..."
-        cap = (f"<b>{symbol} - {s['direction']}</b>\nBias: {s['bias']} | {s['trade_type']}\nPrice: {s['price']:.4f}\nOB Zone: {s['ob_low']:.4f} - {s['ob_high']:.4f}\n{zone_txt}\nEntry: At OB | SL: Above OB\nTime: {datetime.now().strftime('%H:%M')}")
-        if touched_ob and not liqs:
-            if not already_sent(f"TRADE-A-{ob_key}"):
-                send_text(f"🟢 TRADE - MODEL A\n<b>{symbol}</b>\nOB Cleared Liquidity + FVG + BOS + Retracement to OB = ENTER")
-                ok = send_photo(buf, cap); results.append(f"{symbol}: {'Sent' if ok else 'Failed'} - MODEL A")
-        elif liqs and not touched_ob and not swept:
-            if not already_sent(f"WAIT-B-{ob_key}"):
-                send_text(f"🟡 WAIT - MODEL B\n<b>{symbol}</b>\nOB + FVG + BOS formed\nRetracement did NOT touch OB yet\nLiquidity (failed retracements) still standing\nWaiting for SWEEP + TAP OB")
-        elif liqs and swept and touched_ob:
-            if not already_sent(f"TRADE-B-{ob_key}"):
-                send_text(f"🟢 TRADE - MODEL B\n<b>{symbol}</b>\nSweep of Liquidity (Failed Retracement) + Tap OB = ENTER")
-                ok = send_photo(buf, cap); results.append(f"{symbol}: {'Sent' if ok else 'Failed'} - MODEL B")
+        df4 = get_data(ticker, "4h", "30d")
+        for tf_label, tf_interval, tf_period in TIMEFRAMES:
+            df1 = get_data(ticker, tf_interval, tf_period)
+            s = find_setup(df1, df4)
+            if s is None or df1 is None: continue
+            label = f"{symbol} {tf_label}"
+            ob_low = s['ob_low']; ob_high = s['ob_high']; ob_key = f"{label}-{ob_low:.4f}-{ob_high:.4f}"
+            if not already_sent(f"OB-{ob_key}"):
+                send_text(f"🟡 OB FORMED [{tf_label}]\n<b>{label}</b>\nZone: {ob_low:.4f} - {ob_high:.4f}\nDir: {s['direction']} | Bias: {s['bias']} | Structure: {s.get('struct','BOS')}")
+            liqs = find_failed_retracements(df1, ob_low, ob_high)
+            for liq in liqs:
+                liq_key = f"LIQ-{ob_key}-{liq['price']:.4f}"
+                if not already_sent(liq_key):
+                    send_text(f"🔵 LIQUIDITY FORMED [{tf_label}]\n<b>{label}</b>\nType: {liq['type']} - IDM / Failed Retracement\nPrice: {liq['price']:.4f}\nRule: Until price touches OB, all failed retracements = Liquidity")
+            last_low = float(df1['Low'].iloc[-1]); last_high = float(df1['High'].iloc[-1])
+            touched_ob = (last_low <= ob_high and last_high >= ob_low); swept = did_sweep(df1, liqs)
+            buf = make_chart(df1, label, s, tf_label)
+            zone_txt = "✅ IN OB ZONE - WAIT FOR..."
+            cap = (f"<b>{label} - {s['direction']}</b>\nBias: {s['bias']} | {s['trade_type']}\nPrice: {s['price']:.4f}\nOB Zone: {s['ob_low']:.4f} - {s['ob_high']:.4f}\n{zone_txt}\nEntry: At OB | SL: Above OB\nTime: {datetime.now().strftime('%H:%M')}")
+            if touched_ob and not liqs:
+                if not already_sent(f"TRADE-A-{ob_key}"):
+                    send_text(f"🟢 TRADE - MODEL A [{tf_label}]\n<b>{label}</b>\nOB Cleared Liquidity + FVG + {s.get('struct','BOS')} + Retracement to OB = ENTER")
+                    ok = send_photo(buf, cap); results.append(f"{label}: {'Sent' if ok else 'Failed'} - MODEL A")
+            elif liqs and not touched_ob and not swept:
+                if not already_sent(f"WAIT-B-{ob_key}"):
+                    send_text(f"🟡 WAIT - MODEL B [{tf_label}]\n<b>{label}</b>\nOB + FVG + {s.get('struct','BOS')} formed\nRetracement did NOT touch OB yet\nLiquidity (failed retracements) still standing\nWaiting for SWEEP + TAP OB")
+            elif liqs and swept and touched_ob:
+                if not already_sent(f"TRADE-B-{ob_key}"):
+                    send_text(f"🟢 TRADE - MODEL B [{tf_label}]\n<b>{label}</b>\nSweep of Liquidity (Failed Retracement) + Tap OB = ENTER")
+                    ok = send_photo(buf, cap); results.append(f"{label}: {'Sent' if ok else 'Failed'} - MODEL B")
     return results
 
 # ---------- APP UI ----------
 now_str = datetime.now().strftime("%H:%M:%S")
-st.markdown(f"""<div class="topbar"><div><b>VOI V2</b><div class="sub">OB Scanner • OB + FVG → BOS + IDM</div></div><div style="text-align:right"><div class="live">● LIVE</div><div class="sub">{now_str}</div></div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="topbar"><div><b>VOI V2</b><div class="sub">OB Scanner • OB + FVG → CHoCH/BOS + IDM • H1 + M15</div></div><div style="text-align:right"><div class="live">● LIVE</div><div class="sub">{now_str}</div></div></div>""", unsafe_allow_html=True)
 
-# Live cards - fetch fresh for display (no alerts here)
 for symbol, ticker in SYMBOLS.items():
-    df1 = get_data(ticker, "1h", "10d"); df4 = get_data(ticker, "4h", "30d")
-    s = find_setup(df1, df4)
-    if s is None:
-        st.markdown(f"""<div class="card"><div class="card-top"><span class="sym">{symbol}</span><span class="badge-wait">NO OB</span></div><div class="meta">No fresh OB found - All OBs already touched.</div></div>""", unsafe_allow_html=True)
-        continue
-    badge = "badge-buy" if s['direction']=="BUY" else "badge-sell"
-    inzone = "✅ IN OB ZONE" if s['in_zone'] else f"⏳ {s['dist']:.2f}% away from OB"
-    st.markdown(f"""<div class="card"><div class="card-top"><span class="sym">{symbol}</span><span class="{badge}">{s['direction']}</span></div><div class="price">{s['price']:.4f}</div><div class="state">{s['state']}</div><div class="meta">Bias: <b>{s['bias']}</b> • {inzone}<br>OB: {s['ob_low']:.4f} - {s['ob_high']:.4f}<br>FVG: {s['fvg_low']:.4f} - {s['fvg_high']:.4f}</div></div>""", unsafe_allow_html=True)
+    df4 = get_data(ticker, "4h", "30d")
+    for tf_label, tf_interval, tf_period in TIMEFRAMES:
+        df1 = get_data(ticker, tf_interval, tf_period)
+        s = find_setup(df1, df4)
+        label = f"{symbol} {tf_label}"
+        if s is None:
+            st.markdown(f"""<div class="card"><div class="card-top"><span class="sym">{label}</span><span class="badge-wait">NO OB</span></div><div class="meta">No fresh OB found - All OBs already touched.</div></div>""", unsafe_allow_html=True)
+            continue
+        badge = "badge-buy" if s['direction']=="BUY" else "badge-sell"
+        inzone = "✅ IN OB ZONE" if s['in_zone'] else f"⏳ {s['dist']:.2f}% away from OB"
+        st.markdown(f"""<div class="card"><div class="card-top"><span class="sym">{label}</span><span class="{badge}">{s['direction']} • {s.get('struct','BOS')}</span></div><div class="price">{s['price']:.4f}</div><div class="state">{s['state']}</div><div class="meta">Bias: <b>{s['bias']}</b> • {inzone}<br>OB: {s['ob_low']:.4f} - {s['ob_high']:.4f}<br>FVG: {s['fvg_low']:.4f} - {s['fvg_high']:.4f}</div></div>""", unsafe_allow_html=True)
 
 if st.button("🔍  RUN SCAN NOW"):
-    with st.spinner("Scanning OB for all 3..."):
+    with st.spinner("Scanning OB for all 6 (H1 + M15)..."):
         res = scan_all()
         for r in res: st.write(r)
         if len(res) == 0: st.warning("0 fresh OBs found - All OBs were already touched.")
         else: st.success(f"Done - Sent {len(res)} charts to Telegram!")
 if st.button("🧪  TEST ALERTS"):
-    send_text("🟡 OB FORMED\n<b>TEST - EURUSD</b>\nZone: 1.0850 - 1.0860\nDir: Bullish")
-    send_text("🔵 LIQUIDITY FORMED\n<b>TEST - EURUSD</b>\nType: buyside - IDM / Failed Retracement\nPrice: 1.0900")
-    send_text("🟡 WAIT - MODEL B\n<b>TEST - EURUSD</b>\nWaiting for SWEEP + TAP OB")
+    send_text("🟡 OB FORMED [M15]\n<b>TEST - EURUSD M15</b>\nZone: 1.0850 - 1.0860\nDir: Bullish | Structure: CHoCH")
+    send_text("🔵 LIQUIDITY FORMED [M15]\n<b>TEST - EURUSD M15</b>\nType: buyside - IDM / Failed Retracement\nPrice: 1.0900")
+    send_text("🟡 WAIT - MODEL B [M15]\n<b>TEST - EURUSD M15</b>\nWaiting for SWEEP + TAP OB")
     st.success("Test sent - Check Telegram!")
 
-st.markdown("""<div class="statusbar">Auto-scan: ON • Every 5 mins • UptimeRobot: Connected<br>OB (Order Block) • Not EMA • Telegram alerts active</div>""", unsafe_allow_html=True)
+st.markdown("""<div class="statusbar">Auto-scan: ON • Every 5 mins • UptimeRobot: Connected<br>OB (Order Block) • CHoCH + BOS • H1 + M15 • Telegram alerts active</div>""", unsafe_allow_html=True)
 
 if "last" not in st.session_state: st.session_state.last = 0
 if time.time() - st.session_state.last > 300:
