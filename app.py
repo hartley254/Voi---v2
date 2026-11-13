@@ -224,7 +224,13 @@ def scan_all():
                     ok = send_photo(buf_trade, cap)
             elif liqs and not touched_ob and not swept:
                 if not already_sent(f"WAIT-B-{ob_key}"):
-                    send_text(f"🟡 WAIT - MODEL B [{tf_label}]\n<b>{label}</b>\nOB + FVG + {s.get('struct','BOS')} formed\nRetracement did NOT touch OB yet\nLiquidity (failed retracements) still standing\nWaiting for SWEEP + TAP OB")
+                    cap_wait = f"🟡 WAIT - MODEL B [{tf_label}]\n<b>{label} - {s['direction']}</b>\nBias: {s.get('bias','')}\nOB + FVG + BOS formed\nRetracement did NOT touch OB yet\nLiquidity still standing\nWaiting for SWEEP + TAP OB"
+                    buf_wait = make_chart(df1, label, s, tf_label, liqs=liqs)
+                    ok = send_photo(buf_wait, cap_wait)
+                    if not ok:
+                        send_text(cap_wait)
+                
+                    
             elif liqs and swept and touched_ob:
                 if not already_sent(f"TRADE-B-{ob_key}"):
                     send_text(f"🟢 TRADE - MODEL B [{tf_label}]\n<b>{label}</b>\nSweep of Liquidity (Failed Retracement) + Tap OB = ENTER")
